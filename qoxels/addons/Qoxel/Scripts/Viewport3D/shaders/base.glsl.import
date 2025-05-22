@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://1eth8yahn1n0"
+path="res://.godot/imported/base.glsl-1d370ddd887a445c03db003db04a76ba.res"
+
+[deps]
+
+source_file="res://addons/Qoxel/Scripts/Viewport3D/shaders/base.glsl"
+dest_files=["res://.godot/imported/base.glsl-1d370ddd887a445c03db003db04a76ba.res"]
+
+[params]
+

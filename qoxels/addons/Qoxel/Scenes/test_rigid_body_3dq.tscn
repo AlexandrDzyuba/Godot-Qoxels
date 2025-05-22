@@ -1,0 +1,29 @@
+[gd_scene load_steps=5 format=3 uid="uid://bs40ulqp6eh0h"]
+
+[ext_resource type="Script" path="res://addons/Qoxel/Scripts/RigidBody3DQ.gd" id="1_3np86"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_q3pqk"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_shcni"]
+albedo_color = Color(0.887316, 0.504101, 0.0237392, 1)
+emission_enabled = true
+emission = Color(0.886275, 0.505882, 0.0235294, 1)
+
+[sub_resource type="SphereMesh" id="SphereMesh_2d3en"]
+
+[node name="TestRigidBody3DQ" type="RigidBody3D"]
+script = ExtResource("1_3np86")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("SphereShape3D_q3pqk")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+material_override = SubResource("StandardMaterial3D_shcni")
+mesh = SubResource("SphereMesh_2d3en")
+
+[node name="OmniLight3D" type="OmniLight3D" parent="."]
+light_color = Color(0.934633, 0.659885, 0.458966, 1)
+light_energy = 1.27
+shadow_enabled = true
+omni_range = 5.805
+omni_attenuation = 1.75

@@ -1,0 +1,410 @@
+extends CharacterBody3DQ
+
+@export_category("Character")
+@export var base_speed : float = 3.0
+@export var sprint_speed : float = 6.0
+@export var crouch_speed : float = 1.0
+
+@export var acceleration : float = 10.0
+@export var jump_velocity : float = 4.5
+@export var mouse_sensitivity : float = 0.1
+@export var immobile : bool = false
+@export_file var default_reticle
+
+@export_group("Nodes")
+@export var HEAD : Node3D
+@export var CAMERA : Camera3D
+@export var HEADBOB_ANIMATION : AnimationPlayer
+@export var JUMP_ANIMATION : AnimationPlayer
+@export var CROUCH_ANIMATION : AnimationPlayer
+@export var COLLISION_MESH : CollisionShape3D
+
+@export_group("Controls")
+# We are using UI controls because they are built into Godot Engine so they can be used right away
+@export var JUMP : String = "ui_accept"
+@export var LEFT : String = "ui_left"
+@export var RIGHT : String = "ui_right"
+@export var FORWARD : String = "ui_up"
+@export var BACKWARD : String = "ui_down"
+@export var PAUSE : String = "ui_cancel"
+@export var CROUCH : String
+@export var SPRINT : String
+
+# Uncomment if you want full controller support
+#@export var LOOK_LEFT : String
+#@export var LOOK_RIGHT : String
+#@export var LOOK_UP : String
+#@export var LOOK_DOWN : String
+
+@export_group("Feature Settings")
+@export var jumping_enabled : bool = true
+@export var in_air_momentum : bool = true
+@export var motion_smoothing : bool = true
+@export var sprint_enabled : bool = true
+@export var crouch_enabled : bool = true
+@export_enum("Hold to Crouch", "Toggle Crouch") var crouch_mode : int = 0
+@export_enum("Hold to Sprint", "Toggle Sprint") var sprint_mode : int = 0
+@export var dynamic_fov : bool = true
+@export var continuous_jumping : bool = true
+@export var view_bobbing : bool = true
+@export var jump_animation : bool = true
+@export var pausing_enabled : bool = true
+@export var gravity_enabled : bool = true
+
+
+# Member variables
+var speed : float = base_speed
+var current_speed : float = 0.0
+# States: normal, crouching, sprinting
+var state : String = "normal"
+var low_ceiling : bool = false # This is for when the cieling is too low and the player needs to crouch.
+var was_on_floor : bool = true # Was the player on the floor last frame (for landing animation)
+
+# The reticle should always have a Control node as the root
+var RETICLE : Control
+
+# Get the gravity from the project settings to be synced with RigidBody nodes
+var gravity : float = 0.0;
+
+const TEST_RIGID_BODY_3_DQ = preload("res://addons/Qoxel/Scenes/test_rigid_body_3dq.tscn")
+
+func _ready():
+	#It is safe to comment this line if your game doesn't start with the mouse captured
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	
+	# If the controller is rotated in a certain direction for game design purposes, redirect this rotation into the head.
+	HEAD.rotation.y = rotation.y
+	rotation.y = 0
+	
+	if default_reticle:
+		change_reticle(default_reticle)
+	
+	# Reset the camera position
+	# If you want to change the default head height, change these animations.
+	HEADBOB_ANIMATION.play("RESET")
+	JUMP_ANIMATION.play("RESET")
+	CROUCH_ANIMATION.play("RESET")
+	
+	check_controls()
+
+func check_controls(): # If you add a control, you might want to add a check for it here.
+	if !InputMap.has_action(JUMP):
+		push_error("No control mapped for jumping. Please add an input map control. Disabling jump.")
+		jumping_enabled = false
+	if !InputMap.has_action(LEFT):
+		push_error("No control mapped for move left. Please add an input map control. Disabling movement.")
+		immobile = true
+	if !InputMap.has_action(RIGHT):
+		push_error("No control mapped for move right. Please add an input map control. Disabling movement.")
+		immobile = true
+	if !InputMap.has_action(FORWARD):
+		push_error("No control mapped for move forward. Please add an input map control. Disabling movement.")
+		immobile = true
+	if !InputMap.has_action(BACKWARD):
+		push_error("No control mapped for move backward. Please add an input map control. Disabling movement.")
+		immobile = true
+	if !InputMap.has_action(PAUSE):
+		push_error("No control mapped for move pause. Please add an input map control. Disabling pausing.")
+		pausing_enabled = false
+	if !InputMap.has_action(CROUCH):
+		push_error("No control mapped for crouch. Please add an input map control. Disabling crouching.")
+		crouch_enabled = false
+	if !InputMap.has_action(SPRINT):
+		push_error("No control mapped for sprint. Please add an input map control. Disabling sprinting.")
+		sprint_enabled = false
+
+
+func change_reticle(reticle): # Yup, this function is kinda strange
+	if RETICLE:
+		RETICLE.queue_free()
+	
+	RETICLE = load(reticle).instantiate()
+	RETICLE.character = self
+	$UserInterface.add_child(RETICLE)
+
+
+func _physics_process(delta):
+	# Big thanks to github.com/LorenzoAncora for the concept of the improved debug values
+	current_speed = Vector3.ZERO.distance_to(get_real_velocity())
+	$UserInterface/DebugPanel.add_property("Speed", snappedf(current_speed, 0.001), 1)
+	$UserInterface/DebugPanel.add_property("Target speed", speed, 2)
+	var cv : Vector3 = get_real_velocity()
+	var vd : Array[float] = [
+		snappedf(cv.x, 0.001),
+		snappedf(cv.y, 0.001),
+		snappedf(cv.z, 0.001)
+	]
+	var readable_velocity : String = "X: " + str(vd[0]) + " Y: " + str(vd[1]) + " Z: " + str(vd[2])
+	$UserInterface/DebugPanel.add_property("Velocity", readable_velocity, 3)
+	
+	# Gravity
+	#gravity = ProjectSettings.get_setting("physics/3d/default_gravity") # If the gravity changes during your game, uncomment this code
+	
+	#
+	var camera_direction = -HEAD.global_transform.basis.z;
+	var camera_target_position = HEAD.global_position + (camera_direction * 10.0);
+	var ray = world.ray_cast(HEAD.global_position, camera_target_position);
+	
+	var voxel = world.get_voxel_position(world.round_to_voxel(global_position + Vector3(0, -1, 0)));
+	#print(world.voxel_is_solid(global_position + Vector3(0, -1, 0)))
+	#$"../cube".global_position = Vector3(world.voxel_to_global(voxel[0], voxel[1])) - Vector3.ONE/2;
+	
+	
+	#$"../cube".global_position = Vector3(world.voxel_to_global(voxel[0], voxel[1]));
+	
+	
+	#if a != Color.BLACK:
+	##	print(a);
+	
+	if !ray.is_empty():
+		var vp = ray.passed_voxels[ray.passed_voxels.size()-2];
+		#print(vp)
+		$"../cube".global_position = Vector3(world.voxel_to_global(vp[0], vp[1]));
+		
+		$UserInterface/DebugPanel.add_property("Is blocking", world.is_qoxel_blockingv(ray.voxel_position), 6)
+		
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			var qox = ray.color;
+			qox.r -= 1000;
+			world.set_voxel(ray.voxel_position, qox);
+		
+		#$UserInterface/DebugPanel.add_property("Ray", ray, 4)
+		
+		#$"../cube".global_position += ray.normal;
+		
+		if Input.is_action_just_released("RMB"):
+			if !world.is_qoxel_blockingv(vp):
+				var qox = Color(8191.0, 0.0, 0.0, 1.0);
+				
+				world.set_voxel(vp, qox);
+			pass;
+	
+	
+	if Input.is_key_pressed(KEY_SHIFT):
+		gravity = 9.8;
+		velocity.y -= gravity * delta;
+	elif Input.is_key_pressed(KEY_CTRL):
+		velocity.y += gravity * delta * 4.0;
+	#else:
+	#	velocity.y = 0.0;
+	
+	velocity.y -= gravity * delta;
+	
+	handle_jumping()
+	
+	var input_dir = Vector2.ZERO
+	if !immobile: # Immobility works by interrupting user input, so other forces can still be applied to the player
+		input_dir = Input.get_vector(LEFT, RIGHT, FORWARD, BACKWARD)
+	handle_movement(delta, input_dir)
+	
+	# The player is not able to stand up if the ceiling is too low
+	low_ceiling = $CrouchCeilingDetection.is_colliding()
+	
+	handle_state(input_dir)
+	if dynamic_fov: # This may be changed to an AnimationPlayer
+		update_camera_fov()
+	
+	if view_bobbing:
+		headbob_animation(input_dir)
+	
+	if jump_animation:
+		if !was_on_floor and qis_on_floor(): # The player just landed
+			match randi() % 2: #TODO: Change this to detecting velocity direction
+				0:
+					JUMP_ANIMATION.play("land_left", 0.25)
+				1:
+					JUMP_ANIMATION.play("land_right", 0.25)
+	
+	was_on_floor = qis_on_floor() # This must always be at the end of physics_process
+
+
+func handle_jumping():
+	if Input.is_key_pressed(KEY_1):
+		global_position.y = 64.0;
+	
+	if jumping_enabled:
+		if continuous_jumping: # Hold down the jump button
+			if Input.is_action_pressed(JUMP) and qis_on_floor():
+				if jump_animation:
+					JUMP_ANIMATION.play("jump", 0.25)
+				
+				velocity.y = jump_velocity # Adding instead of setting so jumping on slopes works properly
+		else:
+			if Input.is_action_just_pressed(JUMP) and qis_on_floor():
+				if jump_animation:
+					JUMP_ANIMATION.play("jump", 0.25)
+				velocity.y = jump_velocity
+
+
+
+func handle_movement(delta, input_dir):
+	var direction = input_dir.rotated(-HEAD.rotation.y)
+	direction = Vector3(direction.x, 0, direction.y)
+	qmove_and_slide()
+	
+	if in_air_momentum:
+		if true:
+			if motion_smoothing:
+				velocity.x = lerp(velocity.x, direction.x * speed, acceleration * delta);
+				velocity.z = lerp(velocity.z, direction.z * speed, acceleration * delta);
+			else:
+				velocity.x = direction.x * speed;
+				velocity.z = direction.z * speed;
+	else:
+		if motion_smoothing:
+			velocity.x = lerp(velocity.x, direction.x * speed, acceleration * delta)
+			velocity.z = lerp(velocity.z, direction.z * speed, acceleration * delta)
+		else:
+			velocity.x = direction.x * speed
+			velocity.z = direction.z * speed
+
+
+func handle_state(moving):
+	if sprint_enabled:
+		if sprint_mode == 0:
+			if Input.is_action_pressed(SPRINT) and state != "crouching":
+				if moving:
+					if state != "sprinting":
+						enter_sprint_state()
+				else:
+					if state == "sprinting":
+						enter_normal_state()
+			elif state == "sprinting":
+				enter_normal_state()
+		elif sprint_mode == 1:
+			if moving:
+				# If the player is holding sprint before moving, handle that cenerio
+				if Input.is_action_pressed(SPRINT) and state == "normal":
+					enter_sprint_state()
+				if Input.is_action_just_pressed(SPRINT):
+					match state:
+						"normal":
+							enter_sprint_state()
+						"sprinting":
+							enter_normal_state()
+			elif state == "sprinting":
+				enter_normal_state()
+	
+	if crouch_enabled:
+		if crouch_mode == 0:
+			if Input.is_action_pressed(CROUCH) and state != "sprinting":
+				if state != "crouching":
+					enter_crouch_state()
+			elif state == "crouching" and !$CrouchCeilingDetection.is_colliding():
+				enter_normal_state()
+		elif crouch_mode == 1:
+			if Input.is_action_just_pressed(CROUCH):
+				match state:
+					"normal":
+						enter_crouch_state()
+					"crouching":
+						if !$CrouchCeilingDetection.is_colliding():
+							enter_normal_state()
+
+
+# Any enter state function should only be called once when you want to enter that state, not every frame.
+
+func enter_normal_state():
+	#print("entering normal state")
+	var prev_state = state
+	if prev_state == "crouching":
+		CROUCH_ANIMATION.play_backwards("crouch")
+	state = "normal"
+	speed = base_speed
+
+func enter_crouch_state():
+	#print("entering crouch state")
+	var prev_state = state
+	state = "crouching"
+	speed = crouch_speed
+	CROUCH_ANIMATION.play("crouch")
+
+func enter_sprint_state():
+	#print("entering sprint state")
+	var prev_state = state
+	if prev_state == "crouching":
+		CROUCH_ANIMATION.play_backwards("crouch")
+	state = "sprinting"
+	speed = sprint_speed
+
+
+func update_camera_fov():
+	if state == "sprinting":
+		CAMERA.fov = lerp(CAMERA.fov, 85.0, 0.3)
+	else:
+		CAMERA.fov = lerp(CAMERA.fov, 75.0, 0.3)
+
+
+func headbob_animation(moving):
+	if moving and qis_on_floor():
+		var use_headbob_animation : String
+		match state:
+			"normal","crouching":
+				use_headbob_animation = "walk"
+			"sprinting":
+				use_headbob_animation = "sprint"
+		
+		var was_playing : bool = false
+		if HEADBOB_ANIMATION.current_animation == use_headbob_animation:
+			was_playing = true
+		
+		HEADBOB_ANIMATION.play(use_headbob_animation, 0.25)
+		HEADBOB_ANIMATION.speed_scale = (current_speed / base_speed) * 1.75
+		if !was_playing:
+			HEADBOB_ANIMATION.seek(float(randi() % 2)) # Randomize the initial headbob direction
+			# Let me explain that piece of code because it looks like it does the opposite of what it actually does.
+			# The headbob animation has two starting positions. One is at 0 and the other is at 1.
+			# randi() % 2 returns either 0 or 1, and so the animation randomly starts at one of the starting positions.
+			# This code is extremely performant but it makes no sense.
+		
+	else:
+		if HEADBOB_ANIMATION.is_playing():
+			HEADBOB_ANIMATION.play("RESET", 0.25)
+			HEADBOB_ANIMATION.speed_scale = 1
+
+
+func _process(delta):
+	$UserInterface/DebugPanel.add_property("FPS", Performance.get_monitor(Performance.TIME_FPS), 0)
+	var status : String = state
+	if !qis_on_floor():
+		status += " in the air"
+	$UserInterface/DebugPanel.add_property("State", status, 4)
+	$UserInterface/DebugPanel.add_property("position", global_position, 6);
+	
+	if pausing_enabled:
+		if Input.is_action_just_pressed(PAUSE):
+			match Input.mouse_mode:
+				Input.MOUSE_MODE_CAPTURED:
+					Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+				Input.MOUSE_MODE_VISIBLE:
+					Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	
+	
+	HEAD.rotation.x = clamp(HEAD.rotation.x, deg_to_rad(-90), deg_to_rad(90))
+	
+	# Uncomment if you want full controller support
+	#var controller_view_rotation = Input.get_vector(LOOK_LEFT, LOOK_RIGHT, LOOK_UP, LOOK_DOWN)
+	#HEAD.rotation_degrees.y -= controller_view_rotation.x * 1.5
+	#HEAD.rotation_degrees.x -= controller_view_rotation.y * 1.5
+
+
+func _unhandled_input(event):
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		HEAD.rotation_degrees.y -= event.relative.x * mouse_sensitivity
+		HEAD.rotation_degrees.x -= event.relative.y * mouse_sensitivity
+	
+	if event is InputEventMouseButton && event.is_released() && event.button_index == MOUSE_BUTTON_MIDDLE:
+		var instance : RigidBody3DQ = TEST_RIGID_BODY_3_DQ.instantiate();
+		instance.world = get_qworld();
+		instance.add_collision_exception_with(self);
+		
+		get_parent().add_child(instance);
+		instance.global_position = global_position + Vector3(0, 2, 0);
+		instance.collider_radius = 0.50;
+		instance.collide_bounce = 0.5;
+		
+		var camera_direction = -HEAD.global_transform.basis.z;
+		
+		instance.linear_velocity = camera_direction * 10.0;
+		get_tree().create_timer(10).timeout.connect(instance.queue_free);
+	

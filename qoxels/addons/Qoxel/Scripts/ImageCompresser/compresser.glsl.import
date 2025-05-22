@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://ciu6t3rhxkifh"
+path="res://.godot/imported/compresser.glsl-0a0cbe3363786783f65c64cd713c6cca.res"
+
+[deps]
+
+source_file="res://addons/Qoxel/Scripts/ImageCompresser/compresser.glsl"
+dest_files=["res://.godot/imported/compresser.glsl-0a0cbe3363786783f65c64cd713c6cca.res"]
+
+[params]
+

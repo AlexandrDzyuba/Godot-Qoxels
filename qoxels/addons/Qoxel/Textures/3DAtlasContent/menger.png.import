@@ -1,0 +1,26 @@
+[remap]
+
+importer="3d_texture"
+type="CompressedTexture3D"
+uid="uid://crvr1sq557se1"
+path="res://.godot/imported/menger.png-e579ed5110cd8239f288f3794277bf29.ctex3d"
+metadata={
+"vram_texture": false
+}
+
+[deps]
+
+source_file="res://addons/Qoxel/Textures/3DAtlasContent/menger.png"
+dest_files=["res://.godot/imported/menger.png-e579ed5110cd8239f288f3794277bf29.ctex3d"]
+
+[params]
+
+compress/mode=3
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/hdr_compression=1
+compress/channel_pack=1
+mipmaps/generate=false
+mipmaps/limit=-1
+slices/horizontal=1
+slices/vertical=81

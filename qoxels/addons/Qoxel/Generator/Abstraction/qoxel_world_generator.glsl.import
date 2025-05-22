@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://txouq0boa2sj"
+path="res://.godot/imported/qoxel_world_generator.glsl-5ffed7dc0315eeeb1e4003ca95483467.res"
+
+[deps]
+
+source_file="res://addons/Qoxel/Generator/Abstraction/qoxel_world_generator.glsl"
+dest_files=["res://.godot/imported/qoxel_world_generator.glsl-5ffed7dc0315eeeb1e4003ca95483467.res"]
+
+[params]
+
