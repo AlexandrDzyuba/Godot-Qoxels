@@ -33,22 +33,20 @@ var physics_process_calls : Array[Callable] = [];
 ## Loops through the functions queued in physics_process_calls and calls them.
 ## Clears the list of called functions after execution.
 func _physics_process(delta: float) -> void:
-	if !process_calls.is_empty():
-		for call in process_calls:
-			if call != null && call is Callable && is_instance_valid(call.get_object()):
-				call.call();
-		
-		process_calls.clear();
-
-## Called every frame by the engine during the regular processing step.
-## Loops through the functions queued in physics_process_calls and calls them.
-## Clears the list of called functions after execution.
-func _process(delta: float) -> void:
 	if !physics_process_calls.is_empty():
 		for call in physics_process_calls:
-			call.call();
-		
+			if call != null && call is Callable && is_instance_valid(call.get_object()):
+				call.call();
 		physics_process_calls.clear();
+
+## Called every frame by the engine during the regular processing step.
+## Loops through the functions queued in process_calls and calls them.
+## Clears the list of called functions after execution.
+func _process(delta: float) -> void:
+	if !process_calls.is_empty():
+		for call in process_calls:
+			call.call();
+		process_calls.clear();
 
 ## Method to schedule a function to be called either in the regular process or the physics process frame.
 ## It allows avoiding duplicate calls by checking if the same function with the same arguments
